@@ -632,7 +632,7 @@ MVP 提供五个核心 Tools。
   "user_id": "default",
   "scope": "global",
   "scope_id": "",
-  "category": "coding"
+  "keyword": "language"
 }
 ```
 
@@ -643,21 +643,24 @@ MVP 提供五个核心 Tools。
 | user_id | 否 | 用户 ID |
 | scope | 否 | Scope |
 | scope_id | 否 | Project ID |
-| category | 否 | 分类过滤 |
+| keyword | 否 | 关键字过滤 |
 
-category 应支持按 Key 前缀过滤。
+keyword 采用大小写不敏感的关键字子串匹配，匹配范围包括 Key、Description 和 Value 的文本内容。
 
 例如：
 
-`coding`
+`language`
 
 可以匹配：
 
 ```text
 coding.language
-coding.style
-coding.comments_language
+communication.preferred_language
+description 中包含 language 的偏好
+value 文本中包含 language 的偏好
 ```
+
+关键字匹配比前缀匹配有更高的命中率，也更符合用户和 Agent 的检索习惯。
 
 返回：
 
@@ -751,7 +754,7 @@ coding.comments_language
 {
   "user_id": "default",
   "project_id": "project-a",
-  "category": "coding"
+  "keyword": "language"
 }
 ```
 
@@ -761,7 +764,7 @@ coding.comments_language
 |---|---|---|
 | user_id | 否 | 用户 ID |
 | project_id | 否 | 当前项目 ID |
-| category | 否 | 指定分类 |
+| keyword | 否 | 关键字过滤，匹配 Key、Description 和 Value 文本 |
 
 如果不提供 project_id，则只返回全局偏好。
 
@@ -796,15 +799,17 @@ Resources 主要用于让 Agent 直接读取用户偏好的上下文。
 
 ```text
 preferences://global
-preferences://global/coding
+preferences://global/language
 preferences://global/workflow
 preferences://global/filesystem
 ```
 
+URI 路径部分为关键字过滤条件，匹配规则与 Tools 的 keyword 一致。
+
 具体要求：
 
 1. Resource 返回完整的 JSON 内容。
-2. 支持按分类访问。
+2. 支持按关键字访问。
 3. 内容发生变化后，下次读取应该获得最新数据。
 4. 不需要实现实时推送。
 5. 不需要实现订阅和通知。
@@ -856,15 +861,15 @@ Agent 应根据当前任务读取相关偏好。
 
 例如：
 
-| 任务 | 建议读取的分类 |
+| 任务 | 建议读取的关键字 |
 |---|---|
-| 编写代码 | coding、workflow |
+| 编写代码 | coding、language、workflow |
 | 创建文件 | filesystem |
-| 编写文档 | communication、general |
+| 编写文档 | communication、language |
 | 执行项目任务 | workflow、project 相关偏好 |
 | 一般对话 | general、communication |
 
-对于复杂任务，可以不传 category，一次获取全部有效偏好。
+对于复杂任务，可以不传 keyword，一次获取全部有效偏好。
 
 ---
 
@@ -1084,7 +1089,7 @@ MCP Tools 应返回清晰、可理解的错误。
 - Project Scope 查询。
 - Global / Project 合并。
 - Project 覆盖 Global。
-- Category 前缀过滤。
+- Keyword 关键字过滤（Key、Description、Value）。
 - Upsert 行为。
 - 删除行为。
 

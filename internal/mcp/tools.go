@@ -16,10 +16,10 @@ type getPreferenceInput struct {
 }
 
 type listPreferencesInput struct {
-	UserID   string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
-	Scope    string `json:"scope,omitempty" jsonschema:"optional scope filter: global or project"`
-	ScopeID  string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
-	Category string `json:"category,omitempty" jsonschema:"optional key prefix filter, for example coding"`
+	UserID  string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
+	Scope   string `json:"scope,omitempty" jsonschema:"optional scope filter: global or project"`
+	ScopeID string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
+	Keyword string `json:"keyword,omitempty" jsonschema:"optional keyword; case-insensitive substring match on key, description and value"`
 }
 
 type setPreferenceInput struct {
@@ -41,7 +41,7 @@ type deletePreferenceInput struct {
 type effectivePreferencesInput struct {
 	UserID    string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
 	ProjectID string `json:"project_id,omitempty" jsonschema:"optional project ID; when set, project preferences override global preferences"`
-	Category  string `json:"category,omitempty" jsonschema:"optional key prefix filter, for example coding"`
+	Keyword   string `json:"keyword,omitempty" jsonschema:"optional keyword; case-insensitive substring match on key, description and value"`
 }
 
 func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID string) {
@@ -62,9 +62,9 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_preferences",
-		Description: "List user preferences, optionally filtered by scope and key prefix.",
+		Description: "List user preferences, optionally filtered by scope and keyword.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listPreferencesInput) (*mcp.CallToolResult, any, error) {
-		items, err := svc.List(ctx, userOr(in.UserID, defaultUserID), in.Scope, in.ScopeID, in.Category)
+		items, err := svc.List(ctx, userOr(in.UserID, defaultUserID), in.Scope, in.ScopeID, in.Keyword)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -129,7 +129,7 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 		Name:        "get_effective_preferences",
 		Description: "Get merged effective preferences, with project scope overriding global scope.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in effectivePreferencesInput) (*mcp.CallToolResult, any, error) {
-		preferences, sources, err := svc.Effective(ctx, userOr(in.UserID, defaultUserID), in.ProjectID, in.Category)
+		preferences, sources, err := svc.Effective(ctx, userOr(in.UserID, defaultUserID), in.ProjectID, in.Keyword)
 		if err != nil {
 			return nil, nil, err
 		}

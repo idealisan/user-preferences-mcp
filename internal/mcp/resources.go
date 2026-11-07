@@ -18,8 +18,8 @@ func registerResources(server *mcp.Server, svc *preference.Service, defaultUserI
 			return nil, mcp.ResourceNotFoundError(uri)
 		}
 
-		category := strings.Trim(strings.TrimPrefix(u.Path, "/"), "/")
-		items, err := svc.List(ctx, defaultUserID, preference.ScopeGlobal, "", category)
+		keyword := strings.Trim(strings.TrimPrefix(u.Path, "/"), "/")
+		items, err := svc.List(ctx, defaultUserID, preference.ScopeGlobal, "", keyword)
 		if err != nil {
 			return nil, err
 		}
@@ -51,10 +51,10 @@ func registerResources(server *mcp.Server, svc *preference.Service, defaultUserI
 	}, handler)
 
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
-		URITemplate: "preferences://global/{category}",
-		Name:        "global-preferences-category",
-		Title:       "Global user preferences by category",
-		Description: "Global user preferences filtered by key prefix category.",
+		URITemplate: "preferences://global/{keyword}",
+		Name:        "global-preferences-keyword",
+		Title:       "Global user preferences by keyword",
+		Description: "Global user preferences filtered by keyword.",
 		MIMEType:    "application/json",
 	}, handler)
 }

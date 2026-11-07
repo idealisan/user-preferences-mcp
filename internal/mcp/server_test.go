@@ -83,7 +83,7 @@ func TestToolsAndResources(t *testing.T) {
 
 	effective := call("get_effective_preferences", map[string]any{
 		"project_id": "project-a",
-		"category":   "coding",
+		"keyword":    "coding",
 	})
 	var effectiveOut struct {
 		Preferences map[string]any    `json:"preferences"`
@@ -99,12 +99,12 @@ func TestToolsAndResources(t *testing.T) {
 		t.Fatalf("effective source = %q, want project", effectiveOut.Sources["coding.language"])
 	}
 
-	listed := call("list_preferences", map[string]any{"category": "coding"})
+	listed := call("list_preferences", map[string]any{"keyword": "language"})
 	if !strings.Contains(listed, `"count":2`) {
-		t.Fatalf("list_preferences = %s, want 2 global items", listed)
+		t.Fatalf("list_preferences = %s, want 2 keyword matches", listed)
 	}
 
-	resource, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "preferences://global/coding"})
+	resource, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "preferences://global/language"})
 	if err != nil {
 		t.Fatalf("read resource: %v", err)
 	}

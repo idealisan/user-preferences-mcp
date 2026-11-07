@@ -11,7 +11,7 @@
 - Global / Project 两级 Scope，Project 覆盖 Global
 - JSON Value，支持字符串、数字、布尔值、数组和对象
 - 五个核心 Tools：`get_preference`、`list_preferences`、`set_preference`、`delete_preference`、`get_effective_preferences`
-- 只读 Resources：`preferences://global` 与 `preferences://global/{category}`
+- 只读 Resources：`preferences://global` 与 `preferences://global/{keyword}`
 - 默认只监听 localhost，支持优雅退出
 
 ## 构建
@@ -112,10 +112,12 @@ Use these preferences as part of your working context.
 | Tool | 说明 |
 |---|---|
 | `get_preference` | 获取单项偏好 |
-| `list_preferences` | 查询偏好列表，支持 scope 与 key 前缀过滤 |
+| `list_preferences` | 查询偏好列表，支持 scope 与关键字过滤 |
 | `set_preference` | 创建或更新偏好（Upsert） |
 | `delete_preference` | 删除偏好 |
 | `get_effective_preferences` | 获取 Global / Project 合并后的最终偏好 |
+
+`keyword` 为大小写不敏感的子串匹配，作用于 Key、Description 和 Value 文本。例如 `language` 可以同时匹配 `coding.language` 和 `communication.preferred_language`。
 
 示例（通过 MCP Client 调用）：
 

@@ -10,7 +10,7 @@ import (
 
 type Repository interface {
 	Get(ctx context.Context, userID, scope, scopeID, key string) (*Preference, error)
-	List(ctx context.Context, userID, scope, scopeID, prefix string) ([]*Preference, error)
+	List(ctx context.Context, userID, scope, scopeID, keyword string) ([]*Preference, error)
 	Upsert(ctx context.Context, p *Preference) error
 	Delete(ctx context.Context, userID, scope, scopeID, key string) (bool, error)
 }
@@ -39,9 +39,9 @@ func (s *Service) Get(ctx context.Context, userID, key, scope, scopeID string) (
 	return p, nil
 }
 
-func (s *Service) List(ctx context.Context, userID, scope, scopeID, category string) ([]*Preference, error) {
+func (s *Service) List(ctx context.Context, userID, scope, scopeID, keyword string) ([]*Preference, error) {
 	userID = defaultUserID(userID)
-	category = strings.TrimSpace(category)
+	keyword = strings.TrimSpace(keyword)
 
 	if scope != "" {
 		if !IsValidScope(scope) {
@@ -59,9 +59,9 @@ func (s *Service) List(ctx context.Context, userID, scope, scopeID, category str
 		err   error
 	)
 	if scope == "" {
-		items, err = s.repo.List(ctx, userID, "", "", category)
+		items, err = s.repo.List(ctx, userID, "", "", keyword)
 	} else {
-		items, err = s.repo.List(ctx, userID, scope, scopeID, category)
+		items, err = s.repo.List(ctx, userID, scope, scopeID, keyword)
 	}
 	if err != nil {
 		return nil, DatabaseError(err)
@@ -103,12 +103,12 @@ func (s *Service) Delete(ctx context.Context, userID, key, scope, scopeID string
 	return deleted, nil
 }
 
-func (s *Service) Effective(ctx context.Context, userID, projectID, category string) (map[string]any, map[string]string, error) {
+func (s *Service) Effective(ctx context.Context, userID, projectID, keyword string) (map[string]any, map[string]string, error) {
 	userID = defaultUserID(userID)
 	projectID = strings.TrimSpace(projectID)
-	category = strings.TrimSpace(category)
+	keyword = strings.TrimSpace(keyword)
 
-	globals, err := s.repo.List(ctx, userID, ScopeGlobal, "", category)
+	globals, err := s.repo.List(ctx, userID, ScopeGlobal, "", keyword)
 	if err != nil {
 		return nil, nil, DatabaseError(err)
 	}
@@ -128,7 +128,7 @@ func (s *Service) Effective(ctx context.Context, userID, projectID, category str
 	apply(globals, ScopeGlobal)
 
 	if projectID != "" {
-		projects, err := s.repo.List(ctx, userID, ScopeProject, projectID, category)
+		projects, err := s.repo.List(ctx, userID, ScopeProject, projectID, keyword)
 		if err != nil {
 			return nil, nil, DatabaseError(err)
 		}

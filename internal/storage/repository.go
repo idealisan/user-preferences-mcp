@@ -36,7 +36,7 @@ func (r *Repository) Get(ctx context.Context, userID, scope, scopeID, key string
 	return p, nil
 }
 
-func (r *Repository) List(ctx context.Context, userID, scope, scopeID, prefix string) ([]*preference.Preference, error) {
+func (r *Repository) List(ctx context.Context, userID, scope, scopeID, keyword string) ([]*preference.Preference, error) {
 	query := `
 		SELECT user_id, scope, scope_id, key, value, description, created_at, updated_at
 		FROM preferences
@@ -47,9 +47,14 @@ func (r *Repository) List(ctx context.Context, userID, scope, scopeID, prefix st
 		query += " AND scope = ? AND scope_id = ?"
 		args = append(args, scope, scopeID)
 	}
-	if prefix != "" {
-		query += " AND (key = ? OR key LIKE ? ESCAPE '\\')"
-		args = append(args, prefix, escapeLike(prefix)+".%")
+	if keyword != "" {
+		pattern := "%" + strings.ToLower(escapeLike(keyword)) + "%"
+		query += ` AND (
+			LOWER(key) LIKE ? ESCAPE '\'
+			OR LOWER(description) LIKE ? ESCAPE '\'
+			OR LOWER(value) LIKE ? ESCAPE '\'
+		)`
+		args = append(args, pattern, pattern, pattern)
 	}
 	query += " ORDER BY scope, scope_id, key"
 
