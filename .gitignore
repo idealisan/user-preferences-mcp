@@ -1,0 +1,8 @@
+.DS_Store
+/dist/
+/userpref-mcp
+/userpref-mcp.exe
+preferences.db
+preferences.db-shm
+preferences.db-wal
+*.log
