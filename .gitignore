@@ -1,5 +1,6 @@
 .DS_Store
 /dist/
+/TMP/
 /userpref-mcp
 /userpref-mcp.exe
 preferences.db
