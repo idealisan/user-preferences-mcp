@@ -11,7 +11,7 @@ import (
 type getPreferenceInput struct {
 	UserID  string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
 	Key     string `json:"key" jsonschema:"preference key, for example coding.language"`
-	Scope   string `json:"scope" jsonschema:"global or project"`
+	Scope   string `json:"scope" jsonschema:"global or project; project requires scope_id"`
 	ScopeID string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
 }
 
@@ -19,35 +19,56 @@ type listPreferencesInput struct {
 	UserID  string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
 	Scope   string `json:"scope,omitempty" jsonschema:"optional scope filter: global or project"`
 	ScopeID string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
-	Keyword string `json:"keyword,omitempty" jsonschema:"optional keyword; case-insensitive substring match on key, description and value"`
+	Keyword string `json:"keyword,omitempty" jsonschema:"optional case-insensitive substring match on key, description and value text"`
 }
 
 type setPreferenceInput struct {
 	UserID      string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
-	Key         string `json:"key" jsonschema:"preference key, for example coding.language"`
-	Value       any    `json:"value" jsonschema:"preference value; any valid JSON value"`
-	Scope       string `json:"scope" jsonschema:"global or project"`
+	Key         string `json:"key" jsonschema:"preference key using lowercase dot notation, for example coding.language"`
+	Value       any    `json:"value" jsonschema:"any valid JSON value; on update the whole previous value is replaced, with no deep merge"`
+	Scope       string `json:"scope" jsonschema:"global for every project, or project (requires scope_id) for one project"`
 	ScopeID     string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
-	Description string `json:"description,omitempty" jsonschema:"optional human-readable description"`
+	Description string `json:"description,omitempty" jsonschema:"optional human-readable description shown to agents"`
 }
 
 type deletePreferenceInput struct {
 	UserID  string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
 	Key     string `json:"key" jsonschema:"preference key, for example coding.language"`
-	Scope   string `json:"scope" jsonschema:"global or project"`
+	Scope   string `json:"scope" jsonschema:"global or project; project requires scope_id"`
 	ScopeID string `json:"scope_id,omitempty" jsonschema:"project ID; required when scope is project"`
 }
 
 type effectivePreferencesInput struct {
 	UserID    string `json:"user_id,omitempty" jsonschema:"user ID; defaults to the server default user"`
-	ProjectID string `json:"project_id,omitempty" jsonschema:"optional project ID; when set, project preferences override global preferences"`
-	Keyword   string `json:"keyword,omitempty" jsonschema:"optional keyword; case-insensitive substring match on key, description and value"`
+	ProjectID string `json:"project_id,omitempty" jsonschema:"optional project ID; when set, project preferences override global preferences per key"`
+	Keyword   string `json:"keyword,omitempty" jsonschema:"optional case-insensitive substring match on key, description and value text"`
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func readOnlyAnnotations(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		Title:         title,
+		ReadOnlyHint:  true,
+		OpenWorldHint: boolPtr(false),
+	}
+}
+
+func writeAnnotations(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		Title:           title,
+		DestructiveHint: boolPtr(true),
+		IdempotentHint:  true,
+		OpenWorldHint:   boolPtr(false),
+	}
 }
 
 func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID string) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_preference",
-		Description: "Get a single user preference by key and scope.",
+		Title:       "Get Preference",
+		Description: "Read one stored user preference by key and scope. Returns {key, value, description}, or a not-found error if the key is absent. Read-only, and it does not merge scopes: use get_effective_preferences when you need the value actually in effect.",
+		Annotations: readOnlyAnnotations("Get Preference"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in getPreferenceInput) (*mcp.CallToolResult, any, error) {
 		p, err := svc.Get(ctx, userOr(in.UserID, defaultUserID), in.Key, in.Scope, in.ScopeID)
 		if err != nil {
@@ -62,7 +83,9 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_preferences",
-		Description: "List user preferences, optionally filtered by scope and keyword.",
+		Title:       "List Preferences",
+		Description: "List stored user preferences, optionally filtered by scope and keyword. The keyword is a case-insensitive substring match over key, description and JSON value text. Returns {preferences: [...], count}. Read-only. Use this to discover which keys exist; use get_effective_preferences for the merged view that is in effect.",
+		Annotations: readOnlyAnnotations("List Preferences"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listPreferencesInput) (*mcp.CallToolResult, any, error) {
 		items, err := svc.List(ctx, userOr(in.UserID, defaultUserID), in.Scope, in.ScopeID, in.Keyword)
 		if err != nil {
@@ -87,7 +110,9 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "set_preference",
-		Description: "Create or update a user preference.",
+		Title:       "Set Preference",
+		Description: "Create or update (upsert) a user preference. value may be any JSON value (string, number, boolean, array or object). Calling again with the same key and scope replaces the entire previous value and description, with no deep merge. Use scope \"global\" for every project, or \"project\" plus scope_id for one project. Do not change global preferences unless the user explicitly asks.",
+		Annotations: writeAnnotations("Set Preference"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in setPreferenceInput) (*mcp.CallToolResult, any, error) {
 		value, err := json.Marshal(in.Value)
 		if err != nil {
@@ -113,7 +138,9 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_preference",
-		Description: "Delete a user preference by key and scope.",
+		Title:       "Delete Preference",
+		Description: "Delete a user preference by key and scope. Idempotent: it succeeds with deleted=false when no matching record exists. Project scope requires scope_id. Deletion is irreversible, so confirm intent before removing global preferences.",
+		Annotations: writeAnnotations("Delete Preference"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deletePreferenceInput) (*mcp.CallToolResult, any, error) {
 		deleted, err := svc.Delete(ctx, userOr(in.UserID, defaultUserID), in.Key, in.Scope, in.ScopeID)
 		if err != nil {
@@ -127,7 +154,9 @@ func registerTools(server *mcp.Server, svc *preference.Service, defaultUserID st
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_effective_preferences",
-		Description: "Get merged effective preferences, with project scope overriding global scope.",
+		Title:       "Get Effective Preferences",
+		Description: "Get the user preferences actually in effect, after merging global and project scope (project overrides global per key). Call this at the start of a task to load the user's working context. Returns {preferences: {key: value}, sources: {key: \"global\" | \"project\"}}. Optional keyword filters the result; project_id enables project-level overrides. Read-only.",
+		Annotations: readOnlyAnnotations("Get Effective Preferences"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in effectivePreferencesInput) (*mcp.CallToolResult, any, error) {
 		preferences, sources, err := svc.Effective(ctx, userOr(in.UserID, defaultUserID), in.ProjectID, in.Keyword)
 		if err != nil {

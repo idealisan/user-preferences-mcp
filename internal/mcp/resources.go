@@ -46,7 +46,7 @@ func registerResources(server *mcp.Server, svc *preference.Service, defaultUserI
 		URI:         "preferences://global",
 		Name:        "global-preferences",
 		Title:       "Global user preferences",
-		Description: "All global user preferences as a JSON object.",
+		Description: "All global user preferences as {preferences: {key: value}}. Read-only. Project overrides are not applied; use get_effective_preferences for the merged values in effect.",
 		MIMEType:    "application/json",
 	}, handler)
 
@@ -54,7 +54,7 @@ func registerResources(server *mcp.Server, svc *preference.Service, defaultUserI
 		URITemplate: "preferences://global/{keyword}",
 		Name:        "global-preferences-keyword",
 		Title:       "Global user preferences by keyword",
-		Description: "Global user preferences filtered by keyword.",
+		Description: "Global user preferences filtered by the URI path segment as a case-insensitive substring over key, description and value text. Returns {preferences: {key: value}}. Read-only.",
 		MIMEType:    "application/json",
 	}, handler)
 }

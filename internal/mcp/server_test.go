@@ -42,6 +42,43 @@ func TestToolsAndResources(t *testing.T) {
 	}
 	defer session.Close()
 
+	init := session.InitializeResult()
+	if init == nil || !strings.Contains(init.Instructions, "get_effective_preferences") {
+		t.Fatalf("initialize result should carry usage instructions, got %+v", init)
+	}
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	readOnly := map[string]bool{
+		"get_preference":            true,
+		"list_preferences":          true,
+		"get_effective_preferences": true,
+	}
+	seen := map[string]bool{}
+	for _, tool := range tools.Tools {
+		seen[tool.Name] = true
+		if tool.Title == "" {
+			t.Errorf("tool %s has no title", tool.Name)
+		}
+		if len(tool.Description) < 80 {
+			t.Errorf("tool %s description is too terse: %q", tool.Name, tool.Description)
+		}
+		if tool.Annotations == nil {
+			t.Errorf("tool %s has no annotations", tool.Name)
+			continue
+		}
+		if tool.Annotations.ReadOnlyHint != readOnly[tool.Name] {
+			t.Errorf("tool %s readOnlyHint = %v, want %v", tool.Name, tool.Annotations.ReadOnlyHint, readOnly[tool.Name])
+		}
+	}
+	for name := range readOnly {
+		if !seen[name] {
+			t.Errorf("tool %s not listed", name)
+		}
+	}
+
 	call := func(name string, args map[string]any) string {
 		t.Helper()
 		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
