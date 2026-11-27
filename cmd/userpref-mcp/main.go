@@ -47,7 +47,7 @@ func run() error {
 		"db", cfg.DBPath,
 		"host", cfg.Host,
 		"port", cfg.Port,
-		"user_id", cfg.UserID,
+		"default_profile", cfg.DefaultProfile,
 	)
 	if !isLoopback(cfg.Host) {
 		logger.Warn("listening on a non-loopback address; this version has no authentication or access control")
@@ -61,7 +61,7 @@ func run() error {
 	logger.Info("database ready", "db", cfg.DBPath)
 
 	svc := preference.NewService(storage.NewRepository(db))
-	mcpServer := mcpserver.New(svc, cfg.UserID, version)
+	mcpServer := mcpserver.New(svc, cfg.DefaultProfile, version)
 
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return mcpServer },

@@ -56,27 +56,18 @@ func buildDSN(absPath string) string {
 	return u.String()
 }
 
+// The table is intentionally named preference_descriptions rather than reusing
+// the old "preferences" table, so databases created by earlier versions keep
+// their data untouched. Old data is not migrated into the new format.
 var migrations = []string{
-	`CREATE TABLE IF NOT EXISTS preferences (
+	`CREATE TABLE IF NOT EXISTS preference_descriptions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		user_id TEXT NOT NULL DEFAULT 'default',
-		scope TEXT NOT NULL DEFAULT 'global',
-		scope_id TEXT NOT NULL DEFAULT '',
-		key TEXT NOT NULL,
-		value TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		CHECK (scope IN ('global', 'project')),
-		CHECK (
-			(scope = 'global' AND scope_id = '')
-			OR
-			(scope = 'project' AND scope_id != '')
-		),
-		UNIQUE(user_id, scope, scope_id, key)
+		profile TEXT NOT NULL DEFAULT 'default',
+		description TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`,
-	`CREATE INDEX IF NOT EXISTS idx_preferences_lookup ON preferences(user_id, scope, scope_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_preferences_key ON preferences(user_id, key)`,
+	`CREATE INDEX IF NOT EXISTS idx_preference_descriptions_profile
+		ON preference_descriptions(profile, id)`,
 }
 
 func migrate(db *sql.DB) error {

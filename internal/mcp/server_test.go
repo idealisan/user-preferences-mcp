@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestToolsAndResources(t *testing.T) {
+func TestTools(t *testing.T) {
 	ctx := context.Background()
 	db, err := storage.Open(filepath.Join(t.TempDir(), "preferences.db"))
 	if err != nil {
@@ -43,118 +43,141 @@ func TestToolsAndResources(t *testing.T) {
 	defer session.Close()
 
 	init := session.InitializeResult()
-	if init == nil || !strings.Contains(init.Instructions, "get_effective_preferences") {
+	if init == nil || !strings.Contains(init.Instructions, "get_all_preferences") {
 		t.Fatalf("initialize result should carry usage instructions, got %+v", init)
+	}
+	if strings.Contains(init.Instructions, "keyword") {
+		t.Fatalf("instructions should not mention keyword filtering: %q", init.Instructions)
 	}
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
+	wantTools := map[string]bool{
+		"list_profiles":           true,
+		"get_all_preferences":     true,
+		"replace_all_preferences": true,
+		"append_preferences":      true,
+	}
+	if len(tools.Tools) != len(wantTools) {
+		t.Fatalf("got %d tools, want %d", len(tools.Tools), len(wantTools))
+	}
 	readOnly := map[string]bool{
-		"get_preference":            true,
-		"list_preferences":          true,
-		"get_effective_preferences": true,
+		"list_profiles":       true,
+		"get_all_preferences": true,
 	}
-	seen := map[string]bool{}
 	for _, tool := range tools.Tools {
-		seen[tool.Name] = true
-		if tool.Title == "" {
-			t.Errorf("tool %s has no title", tool.Name)
+		if !wantTools[tool.Name] {
+			t.Fatalf("unexpected tool %q", tool.Name)
 		}
-		if len(tool.Description) < 80 {
-			t.Errorf("tool %s description is too terse: %q", tool.Name, tool.Description)
+		if tool.Title == "" || len(tool.Description) < 80 {
+			t.Errorf("tool %s has insufficient metadata: %+v", tool.Name, tool)
 		}
-		if tool.Annotations == nil {
-			t.Errorf("tool %s has no annotations", tool.Name)
-			continue
-		}
-		if tool.Annotations.ReadOnlyHint != readOnly[tool.Name] {
-			t.Errorf("tool %s readOnlyHint = %v, want %v", tool.Name, tool.Annotations.ReadOnlyHint, readOnly[tool.Name])
-		}
-	}
-	for name := range readOnly {
-		if !seen[name] {
-			t.Errorf("tool %s not listed", name)
+		if tool.Annotations == nil || tool.Annotations.ReadOnlyHint != readOnly[tool.Name] {
+			t.Errorf("tool %s annotations = %+v, readOnly want %v", tool.Name, tool.Annotations, readOnly[tool.Name])
 		}
 	}
 
-	call := func(name string, args map[string]any) string {
+	call := func(name string, args map[string]any) (string, bool) {
 		t.Helper()
 		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil {
 			t.Fatalf("call %s: %v", name, err)
 		}
-		if res.IsError {
-			t.Fatalf("call %s returned tool error: %s", name, contentText(res))
+		return contentText(res), res.IsError
+	}
+	mustCall := func(name string, args map[string]any) string {
+		t.Helper()
+		text, isErr := call(name, args)
+		if isErr {
+			t.Fatalf("call %s returned tool error: %s", name, text)
 		}
-		return contentText(res)
+		return text
 	}
 
-	call("set_preference", map[string]any{
-		"key":         "coding.language",
-		"value":       "Go",
-		"scope":       "global",
-		"description": "preferred language",
-	})
-	call("set_preference", map[string]any{
-		"key":     "coding.style",
-		"value":   "simple",
-		"scope":   "global",
-		"user_id": "alice",
-	})
-	call("set_preference", map[string]any{
-		"key":      "coding.language",
-		"value":    "Python",
-		"scope":    "project",
-		"scope_id": "project-a",
-	})
-
-	got := call("get_preference", map[string]any{
-		"key":   "coding.language",
-		"scope": "global",
-	})
-	if !strings.Contains(got, `"Go"`) {
-		t.Fatalf("get_preference = %s, want Go", got)
+	decode := func(text string) map[string]any {
+		t.Helper()
+		var out map[string]any
+		if err := json.Unmarshal([]byte(text), &out); err != nil {
+			t.Fatalf("decode %q: %v", text, err)
+		}
+		return out
 	}
 
-	effective := call("get_effective_preferences", map[string]any{
-		"project_id": "project-a",
-		"keyword":    "coding",
+	// Fresh profiles are empty.
+	out := decode(mustCall("get_all_preferences", nil))
+	if out["count"] != float64(0) || out["profile"] != "default" {
+		t.Fatalf("empty get = %v", out)
+	}
+
+	// Full replacement stores the exact list in order.
+	mustCall("replace_all_preferences", map[string]any{
+		"preferences": []string{"用中文交流", "改完代码要跑测试"},
 	})
-	var effectiveOut struct {
-		Preferences map[string]any    `json:"preferences"`
-		Sources     map[string]string `json:"sources"`
+	out = decode(mustCall("get_all_preferences", nil))
+	if out["count"] != float64(2) {
+		t.Fatalf("get after replace = %v", out)
 	}
-	if err := json.Unmarshal([]byte(effective), &effectiveOut); err != nil {
-		t.Fatalf("decode effective preferences %q: %v", effective, err)
-	}
-	if effectiveOut.Preferences["coding.language"] != "Python" {
-		t.Fatalf("effective coding.language = %v, want Python", effectiveOut.Preferences["coding.language"])
-	}
-	if effectiveOut.Sources["coding.language"] != "project" {
-		t.Fatalf("effective source = %q, want project", effectiveOut.Sources["coding.language"])
+	items := out["preferences"].([]any)
+	if items[0] != "用中文交流" || items[1] != "改完代码要跑测试" {
+		t.Fatalf("preferences out of order: %v", items)
 	}
 
-	listed := call("list_preferences", map[string]any{"keyword": "language"})
-	if !strings.Contains(listed, `"count":2`) {
-		t.Fatalf("list_preferences = %s, want 2 keyword matches", listed)
-	}
-
-	resource, err := session.ReadResource(ctx, &mcp.ReadResourceParams{URI: "preferences://global/language"})
-	if err != nil {
-		t.Fatalf("read resource: %v", err)
-	}
-	if len(resource.Contents) != 1 || !strings.Contains(resource.Contents[0].Text, `"Go"`) {
-		t.Fatalf("resource contents = %+v, want Go preference", resource.Contents)
-	}
-
-	deleted := call("delete_preference", map[string]any{
-		"key":   "coding.language",
-		"scope": "global",
+	// A second replacement overwrites everything.
+	mustCall("replace_all_preferences", map[string]any{
+		"preferences": []string{"只保留这一条"},
 	})
-	if !strings.Contains(deleted, `"deleted":true`) {
-		t.Fatalf("delete_preference = %s, want deleted true", deleted)
+	out = decode(mustCall("get_all_preferences", nil))
+	if out["count"] != float64(1) || out["preferences"].([]any)[0] != "只保留这一条" {
+		t.Fatalf("get after second replace = %v", out)
+	}
+
+	// Append adds to the end without touching existing items.
+	out = decode(mustCall("append_preferences", map[string]any{
+		"preferences": []string{"新增一条"},
+	}))
+	if out["count"] != float64(2) || out["added"] != float64(1) {
+		t.Fatalf("append result = %v", out)
+	}
+	out = decode(mustCall("get_all_preferences", nil))
+	items = out["preferences"].([]any)
+	if items[0] != "只保留这一条" || items[1] != "新增一条" {
+		t.Fatalf("preferences after append = %v", items)
+	}
+
+	// Profiles are isolated and discoverable.
+	mustCall("replace_all_preferences", map[string]any{
+		"profile":     "work",
+		"preferences": []string{"工作偏好"},
+	})
+	out = decode(mustCall("get_all_preferences", map[string]any{"profile": "work"}))
+	if out["count"] != float64(1) || out["preferences"].([]any)[0] != "工作偏好" {
+		t.Fatalf("work profile = %v", out)
+	}
+	out = decode(mustCall("get_all_preferences", nil))
+	if out["count"] != float64(2) {
+		t.Fatalf("default profile was modified: %v", out)
+	}
+	out = decode(mustCall("list_profiles", nil))
+	profiles := out["profiles"].([]any)
+	if len(profiles) != 2 || profiles[0] != "default" || profiles[1] != "work" {
+		t.Fatalf("list_profiles = %v", out)
+	}
+
+	// An empty list clears a profile; other profiles are unaffected.
+	out = decode(mustCall("replace_all_preferences", map[string]any{"preferences": []string{}}))
+	if out["count"] != float64(0) {
+		t.Fatalf("clear result = %v", out)
+	}
+	out = decode(mustCall("get_all_preferences", nil))
+	if out["count"] != float64(0) {
+		t.Fatalf("get after clear = %v", out)
+	}
+
+	// Blank descriptions are rejected.
+	if _, isErr := call("append_preferences", map[string]any{"preferences": []string{"  "}}); !isErr {
+		t.Fatal("append with a blank description should return a tool error")
 	}
 }
 

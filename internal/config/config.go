@@ -11,17 +11,17 @@ import (
 const (
 	DefaultHost     = "127.0.0.1"
 	DefaultPort     = 8765
-	DefaultUserID   = "default"
+	DefaultProfile  = "default"
 	DefaultLogLevel = "info"
 	DefaultDBName   = "preferences.db"
 )
 
 type Config struct {
-	DBPath   string
-	Host     string
-	Port     int
-	UserID   string
-	LogLevel string
+	DBPath         string
+	Host           string
+	Port           int
+	DefaultProfile string
+	LogLevel       string
 }
 
 func DefaultDBPath() (string, error) {
@@ -39,7 +39,9 @@ func Parse(args []string) (*Config, error) {
 	dbPath := fs.String("db", "", "SQLite database path (default: user home directory/preferences.db)")
 	host := fs.String("host", DefaultHost, "HTTP listen address")
 	port := fs.Int("port", DefaultPort, "HTTP listen port")
-	userID := fs.String("user-id", DefaultUserID, "default user ID")
+	profile := fs.String("profile", DefaultProfile, "default preference profile name")
+	// Accepted as an alias so existing launch scripts keep working.
+	fs.StringVar(profile, "user-id", DefaultProfile, "alias for --profile")
 	logLevel := fs.String("log-level", DefaultLogLevel, "log level (debug, info, warn, error)")
 
 	if err := fs.Parse(args); err != nil {
@@ -54,12 +56,15 @@ func Parse(args []string) (*Config, error) {
 	if !validLogLevel(*logLevel) {
 		return nil, fmt.Errorf("invalid log level %q: expected debug, info, warn or error", *logLevel)
 	}
+	if strings.TrimSpace(*profile) == "" {
+		return nil, fmt.Errorf("profile name must not be empty")
+	}
 
 	cfg := &Config{
-		Host:     *host,
-		Port:     *port,
-		UserID:   *userID,
-		LogLevel: strings.ToLower(*logLevel),
+		Host:           *host,
+		Port:           *port,
+		DefaultProfile: strings.TrimSpace(*profile),
+		LogLevel:       strings.ToLower(*logLevel),
 	}
 
 	if *dbPath == "" {
