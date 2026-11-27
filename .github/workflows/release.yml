@@ -49,6 +49,9 @@ jobs:
           go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
             -o "dist/userpref-mcp_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}" \
             ./cmd/userpref-mcp
+          go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o "dist/userpref-mcp-stdio_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}" \
+            ./cmd/userpref-mcp-stdio
 
       - uses: actions/upload-artifact@v4
         with:
