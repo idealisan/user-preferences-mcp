@@ -3,6 +3,8 @@
 /TMP/
 /userpref-mcp
 /userpref-mcp.exe
+/userpref-mcp-stdio
+/userpref-mcp-stdio.exe
 preferences.db
 preferences.db-shm
 preferences.db-wal
