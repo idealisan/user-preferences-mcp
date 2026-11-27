@@ -3,7 +3,7 @@
 **项目定位：** 供所有 AI Agent 共享的用户偏好服务
 **主要语言：** Go
 **数据库：** SQLite（`modernc.org/sqlite`，纯 Go，无 CGO）
-**通信协议：** MCP over Streamable HTTP
+**通信协议：** MCP over Streamable HTTP（`userpref-mcp`）或 MCP stdio（`userpref-mcp-stdio`），两个二进制功能完全一致
 
 ---
 
@@ -18,32 +18,37 @@
 3. **极简工具集：** 只保留四个 Tool，不提供 Resources。
 4. **可选多 profile：** 默认 `default`，可选传 `profile` 隔离不同上下文的偏好；绝大多数场景不用传。
 5. **纯文本描述：** 偏好就是自然语言描述，不再是 key/value/JSON/scope 结构。
-6. **本地优先：** 默认只监听 localhost，无认证。
+6. **本地优先：** HTTP 版默认只监听 localhost，无认证；stdio 版不监听端口。
+7. **双传输共用核心：** Tool / Service / Repository 只有一份实现，HTTP 与 stdio 只是入口不同。
 
 ## 3. 系统架构
 
 ```text
-AI Agent
-   |
-MCP Streamable HTTP (POST /mcp)
-   |
-MCP Server (internal/mcp)
-   |-- list_profiles / get_all_preferences / replace_all_preferences / append_preferences
-   |
-Preference Service (internal/preference)
-   |-- profile 默认值与描述内容校验
-   |
-Repository (internal/storage)
-   |-- SQLite 事务读写
-   |
-preference_descriptions 表 (~/preferences.db)
+                    AI Agent
+                   /        \
+     Streamable HTTP        stdio (stdin/stdout)
+     (userpref-mcp)         (userpref-mcp-stdio)
+                   \        /
+                 MCP Server (internal/mcp)
+                     |
+        list_profiles / get_all_preferences /
+        replace_all_preferences / append_preferences
+                     |
+        Preference Service (internal/preference)
+                     |-- profile 默认值与描述内容校验
+                     |
+        Repository (internal/storage)
+                     |-- SQLite 事务读写
+                     |
+        preference_descriptions 表 (~/preferences.db)
 ```
 
-- `internal/mcp`：注册 Tool、编写面向 Agent 的 instructions 和描述。
+- `internal/mcp`：注册 Tool、编写面向 Agent 的 instructions 和描述（两个入口共用）。
 - `internal/preference`：业务逻辑，校验 `profile` 和描述文本；不依赖 SQL。
 - `internal/storage`：SQLite 建表与读写；批量写入使用事务。
-- `internal/config`：命令行参数。
+- `internal/config`：命令行参数（HTTP 与 stdio 各自解析，共用校验逻辑）。
 - `cmd/userpref-mcp`：HTTP 服务、优雅退出。
+- `cmd/userpref-mcp-stdio`：`server.Run(ctx, &mcp.StdioTransport{})`，随 Client 退出；stdout 只走 MCP 协议，日志写 stderr。
 
 ## 4. 数据模型
 
@@ -161,23 +166,39 @@ MCP SDK 的 `Instructions` 在初始化阶段发送给客户端，是约束 Agen
 
 README 中另提供可复制到 Agent 全局配置的 Bootstrap Instruction。
 
-## 7. HTTP 服务
+## 7. 两种传输
+
+### 7.1 HTTP 版 `userpref-mcp`
 
 - MCP Endpoint：`POST /mcp`（Streamable HTTP，由 SDK 处理 GET/POST/DELETE 和会话）
 - 健康检查：`GET /healthz` → `{"status":"ok"}`
 - 默认监听 `127.0.0.1:8765`
 - 支持 SIGINT / SIGTERM 优雅退出
+- 需要常驻后台进程，可被多个 Agent / 多客户端共享
+
+### 7.2 stdio 版 `userpref-mcp-stdio`
+
+- 由 MCP Client 以子进程方式拉起，通过 stdin/stdout 交换 newline-delimited JSON-RPC
+- `server.Run(ctx, &mcp.StdioTransport{})` 阻塞直到 Client 关闭 stdin
+- 不监听端口，无后台常驻进程，随 Client 退出而退出
+- stdout 是协议通道，**只能写 MCP 消息**；所有日志必须写 stderr（实现中使用 `slog` + `os.Stderr`）
+- 单客户端使用；Client 配置中应写二进制绝对路径
+- 与 HTTP 版可共存，也可同时访问同一个 SQLite 文件（WAL 模式）
 
 ## 8. 命令行
+
+HTTP 版支持全部参数：
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `--db` | `~/preferences.db` | 数据库路径；父目录必须已存在 |
-| `--host` | `127.0.0.1` | 监听地址 |
-| `--port` | `8765` | 监听端口 |
+| `--host` | `127.0.0.1` | 监听地址（仅 HTTP 版） |
+| `--port` | `8765` | 监听端口（仅 HTTP 版） |
 | `--profile` | `default` | 默认 profile 名 |
 | `--user-id` | — | `--profile` 的兼容别名 |
 | `--log-level` | `info` | `debug` / `info` / `warn` / `error` |
+
+stdio 版只支持 `--db`、`--profile`、`--user-id`、`--log-level`，不接受 `--host` / `--port`。
 
 ## 9. 并发与一致性
 
@@ -190,7 +211,8 @@ README 中另提供可复制到 Agent 全局配置的 Bootstrap Instruction。
 
 - `internal/storage`：建表持久化、重开数据库后数据仍在、profile 隔离、覆盖与追加顺序。
 - `internal/preference`：默认值归一化、空白描述拒绝。
-- `internal/mcp`：通过真实 MCP Client 验证 instructions、工具清单与 annotations、四个 Tool 的完整调用流程、profile 隔离与错误返回。
+- `internal/mcp`：通过真实 MCP Client（Streamable HTTP）验证 instructions、工具清单与 annotations、四个 Tool 的完整调用流程、profile 隔离与错误返回。
+- `cmd/userpref-mcp-stdio`：编译真实二进制，用 `CommandTransport` 拉起子进程，验证工具清单和读写行为与 HTTP 版一致。
 
 ## 11. 明确不做
 

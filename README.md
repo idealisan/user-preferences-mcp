@@ -1,8 +1,17 @@
 # UserPref MCP Server
 
-一个轻量级的用户偏好服务：把用户的偏好以纯文本描述的形式集中存放，通过标准 MCP（Streamable HTTP）提供给所有 AI Agent 使用。
+一个轻量级的用户偏好服务：把用户的偏好以纯文本描述的形式集中存放，通过标准 MCP 提供给所有 AI Agent 使用。
 
 **One User. One Preference Profile. Every AI Agent.**
+
+## 两个版本，功能完全一致
+
+| 二进制 | 传输方式 | 生命周期 | 适用场景 |
+|---|---|---|---|
+| `userpref-mcp` | Streamable HTTP（`POST /mcp`） | 需要常驻后台进程 | 多个 Agent / 多客户端共享 |
+| `userpref-mcp-stdio` | MCP stdio（stdin/stdout） | 由 MCP Client 拉起，随 Client 退出 | 本地单客户端，不占用常驻进程 |
+
+两个版本共用同一套 Tool、Service 和 SQLite 存储代码，因此**功能、参数、行为完全相同**，可以共存，也可以同时操作同一个数据库文件。
 
 ## 为什么这么设计
 
@@ -16,17 +25,23 @@
 ## 特性
 
 - 纯 Go 实现，SQLite 使用 `modernc.org/sqlite`，不依赖 CGO
-- MCP Streamable HTTP（`POST /mcp`）
 - 偏好是纯文本描述列表，按插入顺序保存
 - 可选的 `profile` 参数，支持多个 profile；默认 `default`
 - 只读 Resources、keyword 过滤、scope / JSON value 等概念已移除
+- stdio 版 stdout 只走 MCP 协议，所有日志写入 stderr
 
-## 构建与运行
+## 构建
 
 需要 Go 1.24+：
 
 ```bash
 go build -o userpref-mcp ./cmd/userpref-mcp
+go build -o userpref-mcp-stdio ./cmd/userpref-mcp-stdio
+```
+
+## 运行：HTTP 版
+
+```bash
 ./userpref-mcp
 ```
 
@@ -43,8 +58,6 @@ go build -o userpref-mcp ./cmd/userpref-mcp
 
 - MCP Endpoint：`http://127.0.0.1:8765/mcp`
 - 健康检查：`http://127.0.0.1:8765/healthz`
-
-### 自定义参数
 
 ```bash
 ./userpref-mcp \
@@ -64,9 +77,46 @@ go build -o userpref-mcp ./cmd/userpref-mcp
 | `--user-id` | — | `--profile` 的兼容别名 |
 | `--log-level` | `info` | `debug` / `info` / `warn` / `error` |
 
-## MCP Client 配置
+## 运行：stdio 版
 
-### Claude Code / 通用 JSON 配置
+不需要自己启动。在 MCP Client 配置里指定可执行文件路径，由 Client 按需拉起：
+
+### Claude Code
+
+```bash
+claude mcp add userpref -- /path/to/userpref-mcp-stdio
+```
+
+需要隔离数据库时：
+
+```bash
+claude mcp add userpref -- /path/to/userpref-mcp-stdio --db /tmp/userpref-dev/preferences.db
+```
+
+### 通用 JSON 配置
+
+```json
+{
+  "mcpServers": {
+    "userpref": {
+      "command": "/path/to/userpref-mcp-stdio",
+      "args": ["--db", "/path/to/preferences.db"]
+    }
+  }
+}
+```
+
+### Codex (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.userpref]
+command = "/path/to/userpref-mcp-stdio"
+args = ["--db", "/path/to/preferences.db"]
+```
+
+stdio 版支持的参数只有 `--db`、`--profile`、`--user-id`、`--log-level`；没有 `--host` / `--port`。建议使用二进制的绝对路径，因为 Client 可能设置自己的工作目录。Client 断开连接（关闭 stdin）后进程会自动退出。
+
+### HTTP 版的 MCP Client 配置
 
 ```json
 {
@@ -78,8 +128,6 @@ go build -o userpref-mcp ./cmd/userpref-mcp
   }
 }
 ```
-
-### Codex (`~/.codex/config.toml`)
 
 ```toml
 [mcp_servers.userpref]
@@ -109,7 +157,7 @@ Before starting any task:
 Use these preferences as part of your working context.
 ```
 
-## MCP Tools
+## MCP Tools（两个版本完全相同）
 
 | Tool | 说明 |
 |---|---|
@@ -141,6 +189,8 @@ go test ./...
 go vet ./...
 ```
 
+`cmd/userpref-mcp-stdio/main_test.go` 会编译真实的 stdio 二进制并通过 `CommandTransport` 调用，验证它与 HTTP 版行为一致。
+
 开发调试时建议使用独立数据库，避免污染真实偏好数据：
 
 ```bash
@@ -154,4 +204,9 @@ go run ./cmd/userpref-mcp --db /tmp/userpref-dev/preferences.db --log-level debu
 
 ## 发布
 
-推送 `v*` 形式的 tag 会触发 GitHub Actions，构建 6 个产物并创建 Release：`linux/{amd64,arm64}`、`darwin/{amd64,arm64}`、`windows/{amd64,arm64}`。
+推送 `v*` 形式的 tag 会触发 GitHub Actions，构建 6 个平台 × 2 个二进制，共 12 个产物并创建 Release：
+
+- `userpref-mcp_<os>_<arch>`（HTTP 版）
+- `userpref-mcp-stdio_<os>_<arch>`（stdio 版）
+
+平台：`linux/{amd64,arm64}`、`darwin/{amd64,arm64}`、`windows/{amd64,arm64}`。
